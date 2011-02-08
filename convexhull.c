@@ -1,6 +1,6 @@
-// TT_TEST.cpp : Test file to play with various API calls
-// Initially ignoring so deemed errors
-/* adding code to interafce with opencv + pthreads-win32
+/*
+   Convex Hull and Contours 
+   Following a model-based approach to implement detection of hand postures
    Idris Soule
    Help of Yeshua Ha'Mashiach
 */
