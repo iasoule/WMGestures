@@ -199,17 +199,6 @@ void *showCameraWindow(void *arg)
 int main()
 {
 	
-	//tsuite.pts2convexhull();
-	//tsuite.pts2convexhull();
-	/*IplImage *img, *simg;
-	img = cvLoadImage("Infrared_HAND_87e2.png", CV_LOAD_IMAGE_UNCHANGED);
-
-	simg = tsuite.extractContourConvex(img);
-	cvNamedWindow("Extract Contour",1);
-	cvShowImage("Extract Contour", simg);
-	key = cvWaitKey(0);
-	*/
-#if 1
 	TT_Initialize(); //setup TT cameras
 	printf("Opening Calibration: %s\n", 
 		TT_LoadCalibration("CalibrationResult 2010-11-02 5.03pm.cal") == NPRESULT_SUCCESS ?
@@ -258,6 +247,5 @@ int main()
 	cvDestroyAllWindows();
 	TT_Shutdown();
 	TT_FinalCleanup();
-#endif
 	return 0;
 }
