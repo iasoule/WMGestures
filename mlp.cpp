@@ -1,8 +1,11 @@
-// TT_TEST.cpp : Test file to play with various API calls
-// Initially ignoring so deemed errors
-/* adding code to interafce with opencv + pthreads-win32
-   Idris Soule
-   Help of Yeshua Ha'Mashiach
+/*
+Multilayer Perceptron - Artificial Neural Network
+
++ Includes both training and testing of the network 
++ Modified by toggling defined symbols
+
+Idris Soule
+Help of Yeshua Ha'Mashiach
 */
 
 #include <stdio.h>
