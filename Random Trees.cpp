@@ -1,6 +1,7 @@
-// TT_TEST.cpp : Test file to play with various API calls
-// Initially ignoring so deemed errors
-/* adding code to interafce with opencv + pthreads-win32
+/*
+   Implementation of Random Forests (Tree) for posture detection
+   + Two modes of operation, training and running
+
    Idris Soule
    Help of Yeshua Ha'Mashiach
 */
@@ -149,7 +150,7 @@ void printImage(IplImage *img)
 
 int main()
 {
-#if 1/*
+#if TRAIN
 	int N = 2000;
 	CvMat *response = cvCreateMat(N, 1, CV_32FC1);
 	for(int i = 0; i < N; i++)
@@ -168,7 +169,7 @@ int main()
 	pResult = forest.predict(pmat, 0);
 	printf("Prediction value = %f\n", pResult);
 	cvReleaseMat(&m);cvReleaseMat(&pmat);cvReleaseMat(&response);
-	*/
+	
 
 	IplImage *img = cvLoadImage("Postures\\4pose\\4pose-500.jpg", 0);
 	printImage(img);
