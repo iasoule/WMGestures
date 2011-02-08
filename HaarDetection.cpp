@@ -1,6 +1,8 @@
-// TT_TEST.cpp : Test file to play with various API calls
-// Initially ignoring so deemed errors
-/* adding code to interafce with opencv + pthreads-win32
+/*
+   Haar Detection using all 3 line types
+   all that is necessary is loading of the xml file
+   Opencv provides the haar-training and performace evalution for
+   training the various postures.
    Idris Soule
    Help of Yeshua Ha'Mashiach
 */
