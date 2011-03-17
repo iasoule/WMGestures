@@ -1,5 +1,12 @@
 /* Finite State Machine Implementation
-   Emitting mouse events to the windows event queue
+   This fsm differs from normal fsm's the key component here is a priori info
+   The a priori info allows a single previous state to be identified and determine
+   which gesture was recognized.
+
+   Events are emitted to a executor thread (similar to executor pattern), appropriate
+   event threads are started depending on what postures are read from the bounded queue.
+   Event threads only package payload data (mouse events) and the main event_track thread
+   fires the said mouse events by-way of SendInput.
 
    Idris Soule
 */
@@ -19,7 +26,7 @@
 extern POINT cursor;
 
 typedef enum {INITIAL = 0x0A, TIMING, ACCEPTING ,FINAL} stateType_t;
-typedef enum {LEFT = 0x01, RIGHT, ZOOM, TRACK, QUIT, NOP} stateEvent_t ;
+typedef enum {LEFT = 0x01, RIGHT, ZOOM, TRACK, DRAG, QUIT, NOP} stateEvent_t ;
 typedef enum {TIMER_EXPIRED, TIMER_ALIVE, TIMER_RESET} timerState_t;
 
 typedef struct FSMState_t {
@@ -46,17 +53,18 @@ static pthread_cond_t timerCond = PTHREAD_COND_INITIALIZER;
 static stateEvent_t fsm_event_queue[MAX_QUEUE_ENTRY];
 static int *queueHeadr, *queueTail;
 
+static bool draggable = false;
 
 
 /* timer_thread:
 	One-shot timer which allows the machine to distinguish between
-	a single-click and a double-click, 475 ms is the interval time to re-click
+	a single-click and a double-click, 1.375 s is the interval time to re-click
 */
 static void * timer_thread(void *arg)
 {
 	struct timespec tm;
-	tm.tv_sec = (long)time(0) + 2L;
-	tm.tv_nsec =  0; //475 ms
+	tm.tv_sec = (long)time(0) + 1L;
+	tm.tv_nsec =  375000000; 
 
 	/*
 		Single Click constitutes: Timer Expired => Timer beats user to the punch 
@@ -72,9 +80,12 @@ static void * timer_thread(void *arg)
 	/* condition not signalled in correct amount of time */
 	if(rt == ETIMEDOUT) //mutex has been re-acquired 
 		clickTimer = TIMER_EXPIRED;
-	else
-		clickTimer = TIMER_RESET ;//forced reset t < 475 ms
-
+	else if(rt == 0)
+		clickTimer = TIMER_RESET ;//forced reset t < 1.375 s
+	else {
+		perror("pthread_cond_timedwait()");
+		clickTimer = TIMER_RESET;
+	}
 	pthread_mutex_unlock(&timerLock);  
 	pthread_exit(NULL);
 }
@@ -83,20 +94,22 @@ static void * timer_thread(void *arg)
 
 static void * event_left_click(void *payload)
 {
-	stateEvent_t eventPrev;
+	int arg = (int)payload;
+	stateEvent_t eventPrev = (stateEvent_t)arg;
 	pthread_t timerThread;
 
 	/* Three Cases 
 	   1. Starting a timer (single click or double ?)
 	   2. Setting up payload for event_track to fire
-	   3. Drag event
+	   3. Drag event 
    */
 
 	pthread_mutex_lock(&stateLock);
-	eventPrev = currState.prevEvent;
+	if(eventPrev != DRAG)
+		eventPrev = currState.prevEvent;
 	pthread_mutex_unlock(&stateLock);
 
-	switch(eventPrev){ 
+	switch(eventPrev) {
 		case TRACK:
 			/* assume single-click */
 			if(clickTimer == TIMER_RESET){ //start the timer thread
@@ -131,13 +144,29 @@ static void * event_left_click(void *payload)
 			}
 		break;
 
-		case LEFT: 
-			//Kalman Filter(..) drag event
+		/* Special Case: as there is no event_drag 
+		   Input is sent from this state
+		*/
+		case DRAG:
+			SetCursorPos((cursor.x - 40 + 1)*8.95, (cursor.y - 63 + 1)*7.7);
+			if(!draggable){//enter leftdown state only once 
+				pthread_mutex_lock(&stateLock);
+				ZeroMemory(currState.mouseEvents, sizeof(currState.mouseEvents) * 5);
+				currState.mouseEvents[0].type = INPUT_MOUSE;
+				currState.mouseEvents[0].mi.dwFlags = MOUSEEVENTF_LEFTDOWN;
+				currState.mouseEvents[1].type = INPUT_MOUSE;
+				currState.mouseEvents[1].mi.dwFlags = MOUSEEVENTF_LEFTUP;
+				currState.numEvents = 2;
+				//send only LEFTDOWN event, event_track fires its compliment
+				SendInput(1, currState.mouseEvents, sizeof(INPUT));
+				draggable = true;
+				pthread_mutex_unlock(&stateLock);
+			}	
 		break;
 
 	}
 	pthread_mutex_lock(&stateLock);
-	currState.prevEvent = LEFT;
+	currState.prevEvent = (eventPrev == DRAG) ? DRAG : LEFT;
 	pthread_mutex_unlock(&stateLock);
 	pthread_exit(NULL);
 }
@@ -222,15 +251,16 @@ static void * event_track(void *arg)
 
 	switch(eventPrev){
 		case TRACK:
-		/* get current cursor position (kalman stuff) and setcursorpos */
+		/* Continuous tracking in action */
 		SetCursorPos((cursor.x - 40 + 1)*8.95, (cursor.y - 63 + 1)*7.7);	
 		break;
 
 		case LEFT:
 			while(clickTimer == TIMER_ALIVE)
-				; //wait at most 475ms
+				; //wait at most 1.375s
 			/* now either single/double click is ready */
 			pthread_mutex_lock(&stateLock);
+			assert(currState.numEvents > 0);
 			SendInput(currState.numEvents, currState.mouseEvents, sizeof(INPUT));
 			pthread_mutex_unlock(&stateLock);
 		break;
@@ -239,8 +269,17 @@ static void * event_track(void *arg)
 			/* Fire right click or left-right click */
 			pthread_mutex_lock(&stateLock);
 			UINT sendresult;
+			assert(currState.numEvents > 0);
 			sendresult = SendInput(currState.numEvents, currState.mouseEvents, sizeof(INPUT));
 			assert(sendresult == currState.numEvents);
+			pthread_mutex_unlock(&stateLock);
+		break;
+
+		case DRAG:
+			pthread_mutex_lock(&stateLock);
+			draggable = false;
+			assert(currState.numEvents > 0);
+			SendInput(1, currState.mouseEvents + 1, sizeof(INPUT));
 			pthread_mutex_unlock(&stateLock);
 		break;
 
@@ -326,6 +365,7 @@ static void fsm_execute(void)
     {
         switch(sid){
             case LEFT:
+			case DRAG:
             pthread_mutex_lock(&stateLock);
             currState.emit = event_left_click;
             currState.stateType = TIMING;
@@ -362,13 +402,13 @@ static void fsm_execute(void)
             break;
 
             case QUIT:
-				pthread_cancel(*trackThread);
-				pthread_cond_destroy(&timerCond);
-				pthread_mutex_destroy(&eventLock);
-				pthread_mutex_destroy(&stateLock);
-				pthread_mutex_destroy(&timerLock);
-				pthread_mutex_destroy(&queueLock);
-				pthread_exit(NULL);
+			pthread_cancel(*trackThread);
+			pthread_cond_destroy(&timerCond);
+			pthread_mutex_destroy(&eventLock);
+			pthread_mutex_destroy(&stateLock);
+			pthread_mutex_destroy(&timerLock);
+			pthread_mutex_destroy(&queueLock);
+			pthread_exit(NULL);
             break;
 
             /* Illegal event/No event (empty buffer)*/
@@ -405,7 +445,7 @@ bool fsm_initialize(stateEvent_t initial)
 	queueHeadr = queueTail = (int *)&fsm_event_queue;
 
 	clickTimer = TIMER_RESET;
-	SetDoubleClickTime(2000);
+	SetDoubleClickTime(1375);
 
     const char *fsmErr = "FSM::%s: Couldn't create %s-thread!";
     if(pthread_create(&fsmThread, NULL, 
